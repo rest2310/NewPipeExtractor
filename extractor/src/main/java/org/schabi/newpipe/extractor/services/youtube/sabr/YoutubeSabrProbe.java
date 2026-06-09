@@ -498,7 +498,28 @@ public final class YoutubeSabrProbe {
         if (url == null || url.isEmpty()) {
             return url;
         }
-        return YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
-                videoId, url);
+        final String queryDeobfuscated =
+                YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
+                        videoId, url);
+        final java.util.regex.Matcher pathMatcher =
+                java.util.regex.Pattern.compile("/n/([^/?#]+)").matcher(queryDeobfuscated);
+        if (!pathMatcher.find()) {
+            return queryDeobfuscated;
+        }
+
+        final String encryptedN = pathMatcher.group(1);
+        final String fakeUrl = "https://www.youtube.com/?n=" + encryptedN;
+        final String fakeDeobfuscated =
+                YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
+                        videoId, fakeUrl);
+        final java.util.regex.Matcher queryMatcher =
+                java.util.regex.Pattern.compile("[?&]n=([^&#]+)").matcher(fakeDeobfuscated);
+        if (!queryMatcher.find()) {
+            return queryDeobfuscated;
+        }
+
+        return queryDeobfuscated.substring(0, pathMatcher.start(1))
+                + queryMatcher.group(1)
+                + queryDeobfuscated.substring(pathMatcher.end(1));
     }
 }
