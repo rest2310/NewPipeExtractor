@@ -1105,6 +1105,11 @@ public class YoutubeStreamExtractor extends StreamExtractor {
             final String videoId = getId();
             final List<T> streamList = new ArrayList<>();
 
+            if (shouldUseSabrStreams()) {
+                return getSabrStreams(itagTypeWanted, streamBuilderHelper,
+                        streamTypeExceptionMessage);
+            }
+
             java.util.stream.Stream.of(
                     new Pair<>(androidStreamingData,
                             new Pair<>(androidCpn, androidStreamingUrlsPoToken)),
@@ -1172,7 +1177,9 @@ public class YoutubeStreamExtractor extends StreamExtractor {
                     .setAudioTrackType(itagItem.getAudioTrackType())
                     .setItagItem(itagItem);
 
-            if (streamType == StreamType.LIVE_STREAM
+            if (itagInfo.getDeliveryMethod() != null) {
+                builder.setDeliveryMethod(itagInfo.getDeliveryMethod());
+            } else if (streamType == StreamType.LIVE_STREAM
                     || streamType == StreamType.POST_LIVE_STREAM
                     || !itagInfo.getIsUrl()) {
                 // For YouTube videos on OTF streams and for all streams of post-live streams
@@ -1234,7 +1241,9 @@ public class YoutubeStreamExtractor extends StreamExtractor {
             builder.setResolution(resolutionString != null ? resolutionString
                     : "");
 
-            if (streamType != StreamType.VIDEO_STREAM || !itagInfo.getIsUrl()) {
+            if (itagInfo.getDeliveryMethod() != null) {
+                builder.setDeliveryMethod(itagInfo.getDeliveryMethod());
+            } else if (streamType != StreamType.VIDEO_STREAM || !itagInfo.getIsUrl()) {
                 // For YouTube videos on OTF streams and for all streams of post-live streams
                 // and live streams, only the DASH delivery method can be used.
                 builder.setDeliveryMethod(DeliveryMethod.DASH);
@@ -1244,6 +1253,144 @@ public class YoutubeStreamExtractor extends StreamExtractor {
         };
     }
 
+    private boolean shouldUseSabrStreams() throws ParsingException {
+        return streamType != StreamType.LIVE_STREAM
+                && isSabrOnlyResponse()
+                && getHlsUrl().isEmpty();
+    }
+
+    @Nonnull
+    private <T extends Stream> List<T> getSabrStreams(
+            @Nonnull final ItagItem.ItagType itagTypeWanted,
+            @Nonnull final java.util.function.Function<ItagInfo, T> streamBuilderHelper,
+            @Nonnull final String streamTypeExceptionMessage) throws ParsingException {
+        try {
+            final JsonObject streamingData = getSabrStreamingData();
+            if (streamingData == null) {
+                return Collections.emptyList();
+            }
+
+            final String serverAbrStreamingUrl = streamingData.getString("serverAbrStreamingUrl");
+            final JsonArray adaptiveFormats = streamingData.getArray(ADAPTIVE_FORMATS);
+            if (isNullOrEmpty(serverAbrStreamingUrl) || adaptiveFormats == null) {
+                return Collections.emptyList();
+            }
+
+            final List<T> streamList = new ArrayList<>();
+            adaptiveFormats.streamAsJsonObjects()
+                    .map(formatData -> buildSabrItagInfo(
+                            serverAbrStreamingUrl, formatData, itagTypeWanted))
+                    .filter(Objects::nonNull)
+                    .map(streamBuilderHelper)
+                    .forEachOrdered(stream -> {
+                        if (streamList.stream().noneMatch(existing ->
+                                Objects.equals(existing.getId(), stream.getId()))) {
+                            streamList.add(stream);
+                        }
+                    });
+
+            return streamList;
+        } catch (final Exception e) {
+            throw new ParsingException(
+                    "Could not get SABR " + streamTypeExceptionMessage + " streams", e);
+        }
+    }
+
+    @Nullable
+    private JsonObject getSabrStreamingData() {
+        for (final JsonObject streamingData : Arrays.asList(androidStreamingData, iosStreamingData)) {
+            if (streamingData != null
+                    && !isNullOrEmpty(streamingData.getString("serverAbrStreamingUrl"))
+                    && streamingData.getArray(ADAPTIVE_FORMATS) != null
+                    && !streamingData.getArray(ADAPTIVE_FORMATS).isEmpty()) {
+                return streamingData;
+            }
+        }
+        return null;
+    }
+
+    private boolean isSabrOnlyResponse() {
+        for (final JsonObject streamingData : Arrays.asList(androidStreamingData, iosStreamingData)) {
+            if (streamingData == null || isNullOrEmpty(streamingData.getString("serverAbrStreamingUrl"))) {
+                continue;
+            }
+
+            final JsonArray adaptiveFormats = streamingData.getArray(ADAPTIVE_FORMATS);
+            if (adaptiveFormats == null || adaptiveFormats.isEmpty()) {
+                continue;
+            }
+
+            for (int i = 0; i < adaptiveFormats.size(); i++) {
+                final JsonObject formatData = adaptiveFormats.getObject(i);
+                if (formatData.has("url") || formatData.has(SIGNATURE_CIPHER)
+                        || formatData.has(CIPHER)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        return false;
+    }
+
+    @Nullable
+    private ItagInfo buildSabrItagInfo(@Nonnull final String serverAbrStreamingUrl,
+                                       @Nonnull final JsonObject formatData,
+                                       @Nonnull final ItagItem.ItagType itagTypeWanted) {
+        try {
+            final ItagItem itagItem = ItagItem.getItag(formatData.getInt("itag"));
+            if (itagItem.itagType != itagTypeWanted) {
+                return null;
+            }
+
+            fillSabrItagItem(itagItem, formatData);
+
+            final ItagInfo itagInfo = new ItagInfo(serverAbrStreamingUrl, itagItem);
+            itagInfo.setIsUrl(false);
+            itagInfo.setDeliveryMethod(DeliveryMethod.SABR);
+            return itagInfo;
+        } catch (final Exception ignored) {
+            return null;
+        }
+    }
+
+    private static void fillSabrItagItem(@Nonnull final ItagItem itagItem,
+                                         @Nonnull final JsonObject formatData) {
+        final String mimeType = formatData.getString("mimeType", "");
+        final String codec = mimeType.contains("codecs") ? mimeType.split("\"")[1] : "";
+
+        itagItem.setBitrate(formatData.getInt("bitrate"));
+        itagItem.setWidth(formatData.getInt("width"));
+        itagItem.setHeight(formatData.getInt("height"));
+        if (formatData.has("initRange")) {
+            final JsonObject initRange = formatData.getObject("initRange");
+            itagItem.setInitStart(Integer.parseInt(initRange.getString("start", "-1")));
+            itagItem.setInitEnd(Integer.parseInt(initRange.getString("end", "-1")));
+        }
+        if (formatData.has("indexRange")) {
+            final JsonObject indexRange = formatData.getObject("indexRange");
+            itagItem.setIndexStart(Integer.parseInt(indexRange.getString("start", "-1")));
+            itagItem.setIndexEnd(Integer.parseInt(indexRange.getString("end", "-1")));
+        }
+        itagItem.setQuality(formatData.getString("quality"));
+        itagItem.setCodec(codec);
+        itagItem.setIsDrc(formatData.getBoolean("isDrc", false));
+        itagItem.setLastModified(Long.parseLong(formatData.getString("lastModified", "-1")));
+        itagItem.setXtags(formatData.getString("xtags"));
+        if (formatData.has("fps")) {
+            itagItem.setFps(formatData.getInt("fps"));
+        }
+        if (itagItem.itagType == ItagItem.ItagType.AUDIO) {
+            if (formatData.has("audioSampleRate")) {
+                itagItem.setSampleRate(Integer.parseInt(formatData.getString("audioSampleRate")));
+            }
+            itagItem.setAudioChannels(formatData.getInt("audioChannels", 2));
+        }
+        itagItem.setContentLength(Long.parseLong(formatData.getString("contentLength",
+                String.valueOf(CONTENT_LENGTH_UNKNOWN))));
+        itagItem.setApproxDurationMs(Long.parseLong(formatData.getString("approxDurationMs",
+                String.valueOf(APPROX_DURATION_MS_UNKNOWN))));
+    }
     @Nonnull
     private java.util.stream.Stream<ItagInfo> getStreamsFromStreamingDataKey(
             final String videoId,

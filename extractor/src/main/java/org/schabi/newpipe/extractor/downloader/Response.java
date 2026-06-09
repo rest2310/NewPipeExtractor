@@ -2,6 +2,8 @@ package org.schabi.newpipe.extractor.downloader;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +16,7 @@ public class Response {
     private final String responseMessage;
     private final Map<String, List<String>> responseHeaders;
     private final String responseBody;
+    private final byte[] responseBodyBytes;
 
     private final String latestUrl;
 
@@ -22,11 +25,25 @@ public class Response {
                     @Nullable final Map<String, List<String>> responseHeaders,
                     @Nullable final String responseBody,
                     @Nullable final String latestUrl) {
+        this(responseCode, responseMessage, responseHeaders, responseBody,
+                responseBody == null ? null : responseBody.getBytes(StandardCharsets.UTF_8),
+                latestUrl);
+    }
+
+    public Response(final int responseCode,
+                    final String responseMessage,
+                    @Nullable final Map<String, List<String>> responseHeaders,
+                    @Nullable final String responseBody,
+                    @Nullable final byte[] responseBodyBytes,
+                    @Nullable final String latestUrl) {
         this.responseCode = responseCode;
         this.responseMessage = responseMessage;
         this.responseHeaders = responseHeaders == null ? Collections.emptyMap() : responseHeaders;
 
         this.responseBody = responseBody == null ? "" : responseBody;
+        this.responseBodyBytes = responseBodyBytes == null
+                ? new byte[0]
+                : Arrays.copyOf(responseBodyBytes, responseBodyBytes.length);
         this.latestUrl = latestUrl;
     }
 
@@ -45,6 +62,11 @@ public class Response {
     @Nonnull
     public String responseBody() {
         return responseBody;
+    }
+
+    @Nonnull
+    public byte[] responseBodyBytes() {
+        return Arrays.copyOf(responseBodyBytes, responseBodyBytes.length);
     }
 
     /**

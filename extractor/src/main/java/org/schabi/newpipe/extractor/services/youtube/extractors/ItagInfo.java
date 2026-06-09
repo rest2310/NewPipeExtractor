@@ -1,8 +1,10 @@
 package org.schabi.newpipe.extractor.services.youtube.extractors;
 
 import org.schabi.newpipe.extractor.services.youtube.ItagItem;
+import org.schabi.newpipe.extractor.stream.DeliveryMethod;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.Serializable;
 
 /**
@@ -22,6 +24,8 @@ final class ItagInfo implements Serializable {
     @Nonnull
     private final ItagItem itagItem;
     private boolean isUrl;
+    @Nullable
+    private DeliveryMethod deliveryMethod;
 
     /**
      * Creates a new {@code ItagInfo} instance.
@@ -44,6 +48,15 @@ final class ItagInfo implements Serializable {
         this.isUrl = isUrl;
     }
 
+    /**
+     * Sets a delivery method override for streams that do not follow the default YouTube URL/DASH
+     * mapping.
+     *
+     * @param deliveryMethod the explicit delivery method to use
+     */
+    void setDeliveryMethod(@Nullable final DeliveryMethod deliveryMethod) {
+        this.deliveryMethod = deliveryMethod;
+    }
     /**
      * Gets the content stored in this {@code ItagInfo} instance, which is either the URL to the
      * content itself or the base URL.
@@ -75,4 +88,13 @@ final class ItagInfo implements Serializable {
     boolean getIsUrl() {
         return isUrl;
     }
-}
+
+    /**
+     * Gets the explicit delivery method override, if one is needed.
+     *
+     * @return the explicit delivery method override, or null for the default mapping
+     */
+    @Nullable
+    DeliveryMethod getDeliveryMethod() {
+        return deliveryMethod;
+    }}

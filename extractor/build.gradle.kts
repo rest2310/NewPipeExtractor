@@ -87,6 +87,7 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.google.jsr305)
     implementation(libs.google.protobuf)
+    implementation(libs.brotli.dec)
 
     implementation(libs.mozilla.rhino.core)
     implementation(libs.mozilla.rhino.engine)
