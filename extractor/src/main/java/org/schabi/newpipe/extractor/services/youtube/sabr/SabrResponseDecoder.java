@@ -56,73 +56,76 @@ public final class SabrResponseDecoder {
         final List<UmpPart> parts = UmpReader.readAll(data);
         SabrOnesieHeader currentOnesieHeader = null;
         for (final UmpPart part : parts) {
-            final byte[] partData = part.getRawData();
             decoded.addPart(part);
             switch (part.getType()) {
                 case ONESIE_HEADER:
+                    final byte[] onesieHeaderData = part.getRawData();
                     final SabrOnesieHeader onesieHeader =
-                            SabrOnesieHeader.decode(partData);
+                            SabrOnesieHeader.decode(onesieHeaderData);
                     currentOnesieHeader = onesieHeader;
                     decoded.addOnesieHeader(onesieHeader);
                     decoded.addGenericPartDescription(part.getType(), onesieHeader.summarize());
                     break;
                 case ONESIE_DATA:
                 case ONESIE_ENCRYPTED_MEDIA:
-                    final SabrOnesieData onesieData = SabrOnesieData.fromPart(partData,
+                    final byte[] onesieDataBytes = part.getRawData();
+                    final SabrOnesieData onesieData = SabrOnesieData.fromPart(onesieDataBytes,
                             part.getType() == ONESIE_ENCRYPTED_MEDIA, currentOnesieHeader);
                     decoded.addOnesieData(onesieData);
                     decoded.addGenericPartDescription(part.getType(), onesieData.summarize());
                     break;
                 case FORMAT_INITIALIZATION_METADATA:
+                    final byte[] metadataData = part.getRawData();
                     final SabrFormatInitializationMetadata metadata =
-                            SabrFormatInitializationMetadata.decode(partData);
+                            SabrFormatInitializationMetadata.decode(metadataData);
                     decoded.addFormatInitializationMetadata(metadata);
                     decoded.addGenericPartDescription(part.getType(), metadata.summarize());
                     break;
                 case MEDIA_HEADER:
-                    decoded.addMediaHeader(SabrMediaHeader.decode(partData));
+                    decoded.addMediaHeader(SabrMediaHeader.decode(part.getRawData()));
                     break;
                 case MEDIA:
-                    if (partData.length > 0) {
-                        decoded.addMediaBytes(partData[0] & 0xff, partData.length - 1L);
+                    if (part.getSize() > 0) {
+                        decoded.addMediaBytes(part.getUnsignedByteAt(0), part.getSize() - 1L);
                     }
                     break;
                 case MEDIA_END:
-                    if (partData.length > 0) {
-                        decoded.addMediaEndHeaderId(partData[0] & 0xff);
+                    if (part.getSize() > 0) {
+                        decoded.addMediaEndHeaderId(part.getUnsignedByteAt(0));
                     }
                     break;
                 case LIVE_METADATA:
-                    final SabrLiveMetadata liveMetadata = SabrLiveMetadata.decode(partData);
+                    final SabrLiveMetadata liveMetadata =
+                            SabrLiveMetadata.decode(part.getRawData());
                     decoded.addLiveMetadata(liveMetadata);
                     decoded.addGenericPartDescription(part.getType(), liveMetadata.summarize());
                     break;
                 case NEXT_REQUEST_POLICY:
                     final SabrNextRequestPolicy nextRequestPolicy =
-                            decodeNextRequestPolicy(partData, decoded);
+                            decodeNextRequestPolicy(part.getRawData(), decoded);
                     decoded.addGenericPartDescription(part.getType(),
                             nextRequestPolicy.summarize());
                     break;
                 case SABR_REDIRECT:
-                    final SabrRedirect redirect = SabrRedirect.decode(partData);
+                    final SabrRedirect redirect = SabrRedirect.decode(part.getRawData());
                     decoded.setRedirect(redirect);
                     decoded.setRedirectUrl(redirect.getUrl());
                     decoded.addGenericPartDescription(part.getType(), redirect.summarize());
                     break;
                 case SABR_SEEK:
-                    final SabrSeek sabrSeek = SabrSeek.decode(partData);
+                    final SabrSeek sabrSeek = SabrSeek.decode(part.getRawData());
                     decoded.setSabrSeek(sabrSeek);
                     decoded.addGenericPartDescription(part.getType(), sabrSeek.summarize());
                     break;
                 case SABR_ERROR:
-                    final SabrError sabrError = SabrError.decode(partData);
+                    final SabrError sabrError = SabrError.decode(part.getRawData());
                     decoded.setSabrErrorDetails(sabrError);
                     decoded.setSabrError(sabrError.summarize());
                     decoded.addGenericPartDescription(part.getType(), sabrError.summarize());
                     break;
                 case RELOAD_PLAYER_RESPONSE:
                     final SabrReloadPlayerResponse reloadPlayerResponse =
-                            SabrReloadPlayerResponse.decode(partData);
+                            SabrReloadPlayerResponse.decode(part.getRawData());
                     decoded.setReloadRequested(true);
                     decoded.setReloadPlayerResponse(reloadPlayerResponse);
                     decoded.addGenericPartDescription(part.getType(),
@@ -130,7 +133,7 @@ public final class SabrResponseDecoder {
                     break;
                 case STREAM_PROTECTION_STATUS:
                     final SabrStreamProtectionStatus streamProtection =
-                            SabrStreamProtectionStatus.decode(partData);
+                            SabrStreamProtectionStatus.decode(part.getRawData());
                     decoded.setStreamProtection(streamProtection);
                     decoded.setStreamProtectionStatus(streamProtection.getStatus());
                     decoded.setStreamProtectionMaxRetries(streamProtection.getMaxRetries());
@@ -139,41 +142,41 @@ public final class SabrResponseDecoder {
                     break;
                 case PLAYBACK_START_POLICY:
                     final SabrPlaybackStartPolicy playbackStartPolicy =
-                            SabrPlaybackStartPolicy.decode(partData);
+                            SabrPlaybackStartPolicy.decode(part.getRawData());
                     decoded.setPlaybackStartPolicy(playbackStartPolicy);
                     decoded.addGenericPartDescription(part.getType(),
                             playbackStartPolicy.summarize());
                     break;
                 case SABR_CONTEXT_UPDATE:
                     final SabrContextUpdate sabrContextUpdate =
-                            SabrContextUpdate.decode(partData);
+                            SabrContextUpdate.decode(part.getRawData());
                     decoded.addSabrContextUpdate(sabrContextUpdate);
                     decoded.addGenericPartDescription(part.getType(),
                             sabrContextUpdate.summarize());
                     break;
                 case SABR_CONTEXT_SENDING_POLICY:
                     final SabrContextSendingPolicy sabrContextSendingPolicy =
-                            SabrContextSendingPolicy.decode(partData);
+                            SabrContextSendingPolicy.decode(part.getRawData());
                     decoded.setSabrContextSendingPolicy(sabrContextSendingPolicy);
                     decoded.addGenericPartDescription(part.getType(),
                             sabrContextSendingPolicy.summarize());
                     break;
                 case SNACKBAR_MESSAGE:
                     final SabrSnackbarMessage snackbarMessage =
-                            SabrSnackbarMessage.decode(partData);
+                            SabrSnackbarMessage.decode(part.getRawData());
                     decoded.setSnackbarMessage(snackbarMessage);
                     decoded.addGenericPartDescription(part.getType(), snackbarMessage.summarize());
                     break;
                 case FORMAT_SELECTION_CONFIG:
                     final SabrFormatSelectionConfig formatSelectionConfig =
-                            SabrFormatSelectionConfig.decode(partData);
+                            SabrFormatSelectionConfig.decode(part.getRawData());
                     decoded.setFormatSelectionConfig(formatSelectionConfig);
                     decoded.addGenericPartDescription(part.getType(),
                             formatSelectionConfig.summarize());
                     break;
                 case PREWARM_CONNECTION:
                     final SabrPrewarmConnection prewarmConnection =
-                            SabrPrewarmConnection.decode(partData);
+                            SabrPrewarmConnection.decode(part.getRawData());
                     decoded.setPrewarmConnection(prewarmConnection);
                     decoded.addGenericPartDescription(part.getType(),
                             prewarmConnection.summarize());
@@ -197,25 +200,25 @@ public final class SabrResponseDecoder {
                 case LAWNMOWER_MESSAGING_POLICY:
                 case PLAYBACK_DEBUG_INFO:
                     decoded.addGenericPartDescription(part.getType(),
-                            describeGenericMessage(partData));
+                            describeGenericMessage(part.getRawData()));
                     break;
                 case REQUEST_IDENTIFIER:
                     final SabrRequestIdentifier requestIdentifier =
-                            SabrRequestIdentifier.decode(partData);
+                            SabrRequestIdentifier.decode(part.getRawData());
                     decoded.setRequestIdentifier(requestIdentifier);
                     decoded.addGenericPartDescription(part.getType(),
                             requestIdentifier.summarize());
                     break;
                 case REQUEST_CANCELLATION_POLICY:
                     final SabrRequestCancellationPolicy requestCancellationPolicy =
-                            SabrRequestCancellationPolicy.decode(partData);
+                            SabrRequestCancellationPolicy.decode(part.getRawData());
                     decoded.setRequestCancellationPolicy(requestCancellationPolicy);
                     decoded.addGenericPartDescription(part.getType(),
                             requestCancellationPolicy.summarize());
                     break;
                 case SELECTABLE_FORMATS:
                     final SabrSelectableFormats selectableFormats =
-                            SabrSelectableFormats.decode(partData);
+                            SabrSelectableFormats.decode(part.getRawData());
                     decoded.setSelectableFormats(selectableFormats);
                     decoded.addGenericPartDescription(part.getType(),
                             selectableFormats.summarize());
@@ -223,7 +226,7 @@ public final class SabrResponseDecoder {
                 default:
                     decoded.addUnknownPartType(part.getType());
                     decoded.addGenericPartDescription(part.getType(),
-                            describeGenericMessage(partData));
+                            describeGenericMessage(part.getRawData()));
                     break;
             }
         }

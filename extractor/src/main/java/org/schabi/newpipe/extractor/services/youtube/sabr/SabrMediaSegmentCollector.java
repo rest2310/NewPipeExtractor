@@ -23,23 +23,22 @@ public final class SabrMediaSegmentCollector {
         final List<SabrMediaSegment> segments = new ArrayList<>();
         final Map<Integer, OpenSegment> openSegments = new HashMap<>();
         for (final UmpPart part : response.getParts()) {
-            final byte[] partData = part.getRawData();
             switch (part.getType()) {
                 case SabrResponseDecoder.MEDIA_HEADER:
-                    final SabrMediaHeader header = SabrMediaHeader.decode(partData);
+                    final SabrMediaHeader header = SabrMediaHeader.decode(part.getRawData());
                     openSegments.put(header.getHeaderId(), new OpenSegment(header));
                     break;
                 case SabrResponseDecoder.MEDIA:
-                    if (partData.length > 0) {
-                        final OpenSegment openSegment = openSegments.get(partData[0] & 0xff);
+                    if (part.getSize() > 0) {
+                        final OpenSegment openSegment = openSegments.get(part.getUnsignedByteAt(0));
                         if (openSegment != null) {
-                            openSegment.write(partData, 1, partData.length - 1);
+                            openSegment.write(part, 1, part.getSize() - 1);
                         }
                     }
                     break;
                 case SabrResponseDecoder.MEDIA_END:
-                    if (partData.length > 0) {
-                        final OpenSegment openSegment = openSegments.remove(partData[0] & 0xff);
+                    if (part.getSize() > 0) {
+                        final OpenSegment openSegment = openSegments.remove(part.getUnsignedByteAt(0));
                         if (openSegment != null) {
                             segments.add(openSegment.toSegment());
                         }
@@ -73,8 +72,9 @@ public final class SabrMediaSegmentCollector {
             this.header = header;
         }
 
-        private void write(@Nonnull final byte[] bytes, final int offset, final int length) {
-            data.write(bytes, offset, length);
+        private void write(@Nonnull final UmpPart part, final int offset, final int length)
+                throws SabrProtocolException {
+            part.writeTo(data, offset, length);
         }
 
         @Nonnull

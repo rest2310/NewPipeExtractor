@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class YoutubeSabrSession {
     private static final int MAX_REQUESTS_PER_SEGMENT = 16;
+    private static final int MAX_STARTUP_REQUESTS = 4;
     private static final int MAX_POLICY_ONLY_RESPONSES_PER_SEGMENT = 3;
     private static final int MAX_REDIRECTS_PER_SESSION = 3;
     // server can ask us to reload the player response (URLs/config expired on a long watch). re-probe
@@ -173,8 +174,7 @@ public final class YoutubeSabrSession {
             throws IOException, ExtractionException {
         final YoutubeSabrProbeResult result;
         if (requestNumber == 0) {
-            result = YoutubeSabrProbe.probeFirstMediaResponse(info, audioFormat, videoFormat, streamState,
-                    serverAbrStreamingUrl, localization);
+            result = fetchInitialResponse(localization);
         } else {
             result = YoutubeSabrProbe.probeFollowUpMediaResponse(info, audioFormat, videoFormat,
                     streamState, requestNumber, serverAbrStreamingUrl, localization);
@@ -190,6 +190,40 @@ public final class YoutubeSabrSession {
         }
         requestNumber++;
         return result;
+    }
+
+    @Nonnull
+    private YoutubeSabrProbeResult fetchInitialResponse(@Nonnull final Localization localization)
+            throws IOException, ExtractionException {
+        YoutubeSabrProbeResult last = null;
+        for (int attempts = 0; attempts < MAX_STARTUP_REQUESTS; attempts++) {
+            last = YoutubeSabrProbe.probeFirstMediaResponse(info, audioFormat, videoFormat, null,
+                    serverAbrStreamingUrl, localization);
+            if (hasSelectedInitializationSegments(last.getDecodedResponse())) {
+                return last;
+            }
+            final int backoffMs = last.getDecodedResponse().getBackoffTimeMs();
+            if (backoffMs > 0) {
+                sleepBackoff(backoffMs);
+            }
+        }
+        return last;
+    }
+
+    private boolean hasSelectedInitializationSegments(@Nonnull final SabrDecodedResponse decoded) {
+        boolean audioInit = false;
+        boolean videoInit = false;
+        for (final SabrMediaHeader header : decoded.getMediaHeaders()) {
+            if (!header.isInitSegment()) {
+                continue;
+            }
+            if (header.getItag() == audioFormat.getItag()) {
+                audioInit = true;
+            } else if (header.getItag() == videoFormat.getItag()) {
+                videoInit = true;
+            }
+        }
+        return audioInit && videoInit;
     }
 
     /**

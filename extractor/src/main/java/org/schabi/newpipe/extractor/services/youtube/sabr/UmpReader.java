@@ -8,6 +8,9 @@ import java.util.List;
  * Reader for YouTube's UMP envelope. UMP uses its own compact integer format, not protobuf varints.
  */
 public final class UmpReader {
+    private static final int MAX_UMP_PARTS = 4096;
+    private static final int MAX_UMP_PART_SIZE = 64 * 1024 * 1024;
+
     private UmpReader() {
     }
 
@@ -16,12 +19,15 @@ public final class UmpReader {
         final Cursor cursor = new Cursor(data);
         final List<UmpPart> parts = new ArrayList<>();
         while (!cursor.isDone()) {
+            if (parts.size() >= MAX_UMP_PARTS) {
+                throw new SabrProtocolException("Too many UMP parts");
+            }
             final int type = cursor.readUmpInt();
             final int size = cursor.readUmpInt();
             if (type < 0 || size < 0) {
                 throw new SabrProtocolException("Invalid UMP part header");
             }
-            parts.add(new UmpPart(type, size, cursor.readBytes(size)));
+            parts.add(cursor.readPart(type, size));
         }
         return parts;
     }
@@ -40,34 +46,36 @@ public final class UmpReader {
 
         int readUmpInt() throws SabrProtocolException {
             final int first = readUnsignedByte();
+            final long value;
             if (first < 128) {
-                return first;
+                value = first;
+            } else if (first < 192) {
+                value = (first & 0x3f) + 64L * readUnsignedByte();
+            } else if (first < 224) {
+                value = (first & 0x1f) + 32L * (readUnsignedByte()
+                        + 256L * readUnsignedByte());
+            } else if (first < 240) {
+                value = (first & 0x0f) + 16L * (readUnsignedByte()
+                        + 256L * (readUnsignedByte() + 256L * readUnsignedByte()));
+            } else {
+                value = readUnsignedByte()
+                        + 256L * (readUnsignedByte()
+                        + 256L * (readUnsignedByte() + 256L * readUnsignedByte()));
             }
-            if (first < 192) {
-                return (first & 0x3f) + 64 * readUnsignedByte();
+            if (value > Integer.MAX_VALUE) {
+                throw new SabrProtocolException("UMP integer too large: " + value);
             }
-            if (first < 224) {
-                return (first & 0x1f) + 32 * (readUnsignedByte()
-                        + 256 * readUnsignedByte());
-            }
-            if (first < 240) {
-                return (first & 0x0f) + 16 * (readUnsignedByte()
-                        + 256 * (readUnsignedByte() + 256 * readUnsignedByte()));
-            }
-            return readUnsignedByte()
-                    + 256 * (readUnsignedByte()
-                    + 256 * (readUnsignedByte() + 256 * readUnsignedByte()));
+            return (int) value;
         }
 
         @Nonnull
-        byte[] readBytes(final int length) throws SabrProtocolException {
-            if (length < 0 || offset + length > data.length) {
+        UmpPart readPart(final int type, final int length) throws SabrProtocolException {
+            if (length < 0 || length > MAX_UMP_PART_SIZE || length > data.length - offset) {
                 throw new SabrProtocolException("Unexpected EOF while reading UMP part data");
             }
-            final byte[] result = new byte[length];
-            System.arraycopy(data, offset, result, 0, length);
+            final UmpPart part = new UmpPart(type, length, data, offset);
             offset += length;
-            return result;
+            return part;
         }
 
         private int readUnsignedByte() throws SabrProtocolException {
