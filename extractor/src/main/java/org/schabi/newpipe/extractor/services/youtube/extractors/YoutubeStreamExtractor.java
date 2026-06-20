@@ -701,6 +701,29 @@ public class YoutubeStreamExtractor extends StreamExtractor {
     }
 
     @Override
+    public String getServerAbrStreamingUrl() throws ParsingException {
+        assertPageFetched();
+        final JsonObject streamingData = getSabrStreamingData();
+        return streamingData == null ? null
+                : streamingData.getString("serverAbrStreamingUrl");
+    }
+
+    @Override
+    public String getUstreamerConfig() throws ParsingException {
+        assertPageFetched();
+        JsonObject current = playerResponse.getObject("playerConfig");
+        if (current == null) {
+            return null;
+        }
+        current = current.getObject("mediaCommonConfig");
+        if (current == null) {
+            return null;
+        }
+        current = current.getObject("mediaUstreamerRequestConfig");
+        return current == null ? null : current.getString("videoPlaybackUstreamerConfig");
+    }
+
+    @Override
     @Nonnull
     public List<SubtitlesStream> getSubtitlesDefault() throws ParsingException {
         return getSubtitles(MediaFormat.TTML);
@@ -1158,6 +1181,14 @@ public class YoutubeStreamExtractor extends StreamExtractor {
                         }
                     });
 
+            // Keep SABR alternatives available to players even when a classic URL exists. The
+            // application decides whether SABR should win (forced, or classic capped at 360p).
+            // SABR streams remain non-URL streams, so download paths continue to ignore them.
+            if (streamType != StreamType.LIVE_STREAM && getSabrStreamingData() != null) {
+                streamList.addAll(getSabrStreams(itagTypeWanted, streamBuilderHelper,
+                        streamTypeExceptionMessage));
+            }
+
             return streamList;
         } catch (final Exception e) {
             throw new ParsingException(
@@ -1327,7 +1358,8 @@ public class YoutubeStreamExtractor extends StreamExtractor {
 
     @Nullable
     private JsonObject getSabrStreamingData() {
-        for (final JsonObject streamingData : Arrays.asList(androidStreamingData, iosStreamingData)) {
+        for (final JsonObject streamingData
+                : Arrays.asList(androidStreamingData, iosStreamingData)) {
             if (streamingData != null
                     && !isNullOrEmpty(streamingData.getString("serverAbrStreamingUrl"))
                     && streamingData.getArray(ADAPTIVE_FORMATS) != null
@@ -1339,8 +1371,10 @@ public class YoutubeStreamExtractor extends StreamExtractor {
     }
 
     private boolean isSabrOnlyResponse() {
-        for (final JsonObject streamingData : Arrays.asList(androidStreamingData, iosStreamingData)) {
-            if (streamingData == null || isNullOrEmpty(streamingData.getString("serverAbrStreamingUrl"))) {
+        for (final JsonObject streamingData
+                : Arrays.asList(androidStreamingData, iosStreamingData)) {
+            if (streamingData == null
+                    || isNullOrEmpty(streamingData.getString("serverAbrStreamingUrl"))) {
                 continue;
             }
 
